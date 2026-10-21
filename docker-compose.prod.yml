@@ -1,0 +1,51 @@
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ungetrunken
+      MARIADB_USER: ungetrunken
+      MARIADB_PASSWORD: ${DB_PASS:?bitte DB_PASS in .env setzen}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASS:?bitte DB_ROOT_PASS in .env setzen}
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_NAME: ungetrunken
+      DB_USER: ungetrunken
+      DB_PASS: ${DB_PASS}
+      CAMP_NAME: ${CAMP_NAME:-Zeltlager}
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?bitte DOMAIN in .env setzen}
+      ACME_EMAIL: ${ACME_EMAIL:?bitte ACME_EMAIL in .env setzen}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  dbdata:
+  caddy_data:
+  caddy_config:

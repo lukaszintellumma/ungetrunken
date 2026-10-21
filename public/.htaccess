@@ -1,0 +1,6 @@
+DirectoryIndex index.php index.html
+
+# Keine Verzeichnisauflistung
+<IfModule mod_autoindex.c>
+  Options -Indexes
+</IfModule>

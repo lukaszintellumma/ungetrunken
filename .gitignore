@@ -1,0 +1,11 @@
+# Zugangsdaten – gehören NIE ins Repository
+.env
+app/config.php
+
+# Diagnose, nur temporär auf dem Server
+public/ping.php
+
+# Kram
+.DS_Store
+*.log
+*.swp

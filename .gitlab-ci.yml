@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------
+#  ungetrunken – CI für GitLab
+#  Der Deploy-Job ist bewusst manuell: kein Push soll ungefragt
+#  die Instanz überschreiben, auf der gerade ein Lager läuft.
+# ---------------------------------------------------------------
+stages:
+  - test
+  - deploy
+
+syntax:
+  stage: test
+  image: php:8.3-cli
+  script:
+    - echo "PHP-Syntax aller Dateien prüfen"
+    - find app public -name '*.php' -print0 | xargs -0 -n1 php -l
+
+schema:
+  stage: test
+  image: mariadb:11
+  variables:
+    MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "1"
+  script:
+    - echo "Schema und Seed müssen fehlerfrei einspielen"
+    - (docker-entrypoint.sh mariadbd &) && sleep 15
+    - mariadb -u root -e "CREATE DATABASE citest;"
+    - mariadb -u root citest < db/01_schema.sql
+    - mariadb -u root citest < db/02_seed.sql
+    - mariadb -u root citest -e "SELECT COUNT(*) AS artikel FROM products;"
+
+deploy:
+  stage: deploy
+  image: alpine:3.20
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: false
+  before_script:
+    - apk add --no-cache lftp
+  script:
+    - |
+      lftp -c "
+        set ftp:ssl-allow true;
+        set ssl:verify-certificate true;
+        open -u $FTP_USER,$FTP_PASS $FTP_HOST;
+        mirror -R --delete --verbose \
+          --exclude-glob .git/ \
+          --exclude-glob .gitlab-ci.yml \
+          --exclude-glob _wip_mandanten/ \
+          --exclude-glob app/config.php \
+          --exclude-glob public/ping.php \
+          ./ $FTP_TARGET
+      "

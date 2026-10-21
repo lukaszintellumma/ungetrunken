@@ -1,0 +1,15 @@
+# ---------------------------------------------------------------
+#  Nur nötig, wenn das Verzeichnis der Domain NICHT auf public/
+#  zeigt. Die Weiterleitung greift ausschliesslich dann, wenn
+#  unterhalb des Document-Roots wirklich ein public/index.php
+#  liegt - liegt diese Datei schon im Root, passiert nichts.
+#  Dadurch ist die Datei in beiden Konstellationen unschaedlich.
+# ---------------------------------------------------------------
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  RewriteCond %{DOCUMENT_ROOT}/public/index.php -f
+  RewriteCond %{REQUEST_URI} !^/public/
+  RewriteRule ^(.*)$ /public/$1 [L]
+</IfModule>
