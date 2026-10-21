@@ -16,14 +16,18 @@ foreach ($packs as $pk) { $packsByProduct[(int)$pk['product_id']][] = $pk; }
 
 // ---------- Formularzustand ----------
 $head = [
-    'type'           => 'zubuchung',
-    'booking_date'   => date('Y-m-d'),
-    'beleg'          => '',
-    'beleg_text'     => '',
-    'issued_by'      => $u['display_name'],
-    'received_by'    => '',
-    'from_outlet_id' => '',
-    'to_outlet_id'   => '',
+    'type'                 => 'zubuchung',
+    'booking_date'         => date('Y-m-d'),
+    'beleg'                => '',
+    'beleg_text'           => '',
+    'issued_by'            => $u['display_name'],
+    'received_by'          => '',
+    'from_outlet_id'       => '',
+    'to_outlet_id'         => '',
+    'cost_lieferpauschale' => '',
+    'cost_energie'         => '',
+    'cost_frei_label'      => '',
+    'cost_frei_amount'     => '',
 ];
 $items = [];
 
@@ -32,6 +36,9 @@ if ($draftId && $_SERVER['REQUEST_METHOD'] === 'GET') {
     if (!$b) { flash('Diesen Beleg gibt es nicht.', 'error'); redirect('?p=belege'); }
     if ($b['status'] !== 'entwurf') { redirect('?p=beleg&id=' . $draftId); }
     foreach ($head as $k => $_) { $head[$k] = (string)($b[$k] ?? ''); }
+    foreach (['cost_lieferpauschale', 'cost_energie', 'cost_frei_amount'] as $ck) {
+        $head[$ck] = number_format((float)$head[$ck], 2, ',', '');
+    }
     $items = all('SELECT * FROM booking_items WHERE booking_id = ? ORDER BY pos', [$draftId]);
     $rowCount = max($rowCount, count($items) + 1);
 }
@@ -92,6 +99,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $items = $postedItems;   // Eingaben für die Neuanzeige behalten
 
+    $costLieferpauschale = (float)str_replace(',', '.', $head['cost_lieferpauschale'] ?: '0');
+    $costEnergie         = (float)str_replace(',', '.', $head['cost_energie'] ?: '0');
+    $costFreiLabel       = $head['cost_frei_label'] !== '' ? $head['cost_frei_label'] : null;
+    $costFreiAmount      = (float)str_replace(',', '.', $head['cost_frei_amount'] ?: '0');
+
     if (in_array($action, ['save', 'book'], true)) {
         if (!isset(BOOKING_TYPES[$head['type']])) {
             $error = 'Bitte einen Buchungstyp wählen.';
@@ -102,18 +114,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 db()->beginTransaction();
                 if ($draftId) {
                     q('UPDATE bookings SET type=?, booking_date=?, from_outlet_id=?, to_outlet_id=?,
-                            issued_by=?, received_by=?, beleg_text=? WHERE id = ? AND status = "entwurf"',
+                            issued_by=?, received_by=?, beleg_text=?,
+                            cost_lieferpauschale=?, cost_energie=?, cost_frei_label=?, cost_frei_amount=?
+                       WHERE id = ? AND status = "entwurf"',
                       [$head['type'], $head['booking_date'] ?: date('Y-m-d'),
                        $head['from_outlet_id'] ?: null, $head['to_outlet_id'] ?: null,
-                       $head['issued_by'], $head['received_by'], $head['beleg_text'], $draftId]);
+                       $head['issued_by'], $head['received_by'], $head['beleg_text'],
+                       $costLieferpauschale, $costEnergie, $costFreiLabel, $costFreiAmount, $draftId]);
                     q('DELETE FROM booking_items WHERE booking_id = ?', [$draftId]);
                 } else {
                     q('INSERT INTO bookings (type, booking_date, from_outlet_id, to_outlet_id,
-                            issued_by, received_by, beleg_text, user_id, status)
-                       VALUES (?,?,?,?,?,?,?,?,"entwurf")',
+                            issued_by, received_by, beleg_text,
+                            cost_lieferpauschale, cost_energie, cost_frei_label, cost_frei_amount,
+                            user_id, status)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,"entwurf")',
                       [$head['type'], $head['booking_date'] ?: date('Y-m-d'),
                        $head['from_outlet_id'] ?: null, $head['to_outlet_id'] ?: null,
-                       $head['issued_by'], $head['received_by'], $head['beleg_text'], $u['id']]);
+                       $head['issued_by'], $head['received_by'], $head['beleg_text'],
+                       $costLieferpauschale, $costEnergie, $costFreiLabel, $costFreiAmount, $u['id']]);
                     $draftId = (int)db()->lastInsertId();
                 }
                 $stI = db()->prepare('INSERT INTO booking_items
@@ -195,6 +213,21 @@ render_head('Buchung erfassen', $u, 'buchung');
         </select></label>
     </div>
     <p class="hint" id="typehint"></p>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Externe Kosten</h2>
+    <div class="grid grid-4">
+      <label class="field"><span>Lieferpauschale</span>
+        <input name="cost_lieferpauschale" value="<?= e($head['cost_lieferpauschale']) ?>" inputmode="decimal" placeholder="0,00"></label>
+      <label class="field"><span>Energie</span>
+        <input name="cost_energie" value="<?= e($head['cost_energie']) ?>" inputmode="decimal" placeholder="0,00"></label>
+      <label class="field"><span>Freifeld – Bezeichnung</span>
+        <input name="cost_frei_label" value="<?= e($head['cost_frei_label']) ?>" placeholder="z. B. Mautgebühr"></label>
+      <label class="field"><span>Freifeld – Betrag</span>
+        <input name="cost_frei_amount" value="<?= e($head['cost_frei_amount']) ?>" inputmode="decimal" placeholder="0,00"></label>
+    </div>
+    <p class="hint">Kosten, die nicht an einem einzelnen Artikel hängen, z. B. die Anlieferung oder einen Energiezuschlag des Lieferanten. Sie erscheinen auf dem Beleg zusätzlich zum Warenwert.</p>
   </div>
 
   <div class="card">

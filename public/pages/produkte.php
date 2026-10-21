@@ -46,10 +46,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($factor <= 0) {
             flash('Der Umrechnungsfaktor muss größer als 0 sein.', 'error');
         } else {
-            q('INSERT INTO packagings (product_id, name, factor, ean, ek_price) VALUES (?,?,?,?,?)',
+            q('INSERT INTO packagings (product_id, name, factor, ean, ek_price, deposit) VALUES (?,?,?,?,?,?)',
               [$pid, trim((string)$_POST['pname']), $factor,
                trim((string)$_POST['ean']) ?: null,
-               $_POST['pek'] !== '' ? (float)str_replace(',', '.', (string)$_POST['pek']) : null]);
+               $_POST['pek'] !== '' ? (float)str_replace(',', '.', (string)$_POST['pek']) : null,
+               (float)str_replace(',', '.', (string)($_POST['pdeposit'] ?? '0'))]);
             flash('Gebinde hinzugefügt.');
         }
         redirect('?p=produkte&edit=' . $pid);
@@ -140,7 +141,7 @@ render_head('Artikel', $u, 'produkte');
   <h2 style="margin-top:0">Gebinde für <?= e($prod['name']) ?></h2>
   <div class="table-wrap" style="margin-bottom:16px">
     <table>
-      <thead><tr><th>Gebinde</th><th class="num">= <?= e($prod['base_unit']) ?></th><th>Barcode</th><th class="num">EK je Gebinde</th><th></th></tr></thead>
+      <thead><tr><th>Gebinde</th><th class="num">= <?= e($prod['base_unit']) ?></th><th>Barcode</th><th class="num">EK je Gebinde</th><th class="num">Pfand je Gebinde</th><th></th></tr></thead>
       <tbody>
       <?php foreach ($packs as $pk): ?>
         <tr>
@@ -148,6 +149,7 @@ render_head('Artikel', $u, 'produkte');
           <td class="num"><?= num($pk['factor']) ?></td>
           <td><?= e($pk['ean'] ?: '—') ?></td>
           <td class="num"><?= $pk['ek_price'] !== null ? money($pk['ek_price']) : money((float)$pk['factor'] * (float)$prod['ek_price']) ?></td>
+          <td class="num"><?= (float)$pk['deposit'] > 0 ? money($pk['deposit']) : '—' ?></td>
           <td><form method="post" onsubmit="return confirm('Gebinde entfernen?')">
               <?= csrf_field() ?>
               <input type="hidden" name="action" value="del_pack">
@@ -183,9 +185,13 @@ render_head('Artikel', $u, 'produkte');
         <input name="ean" placeholder="EAN scannen"></label>
       <label class="field"><span>EK je Gebinde (optional)</span>
         <input name="pek"></label>
+      <label class="field"><span>Pfand je Gebinde (optional)</span>
+        <input name="pdeposit" placeholder="z. B. Kastenpfand"></label>
     </div>
     <p class="hint">Der Faktor zählt immer in <?= e($prod['base_unit']) ?>, nicht in Zwischengebinden.
-       Eine Palette mit 40 Kästen zu 20 Flaschen hat also den Faktor 800.</p>
+       Eine Palette mit 40 Kästen zu 20 Flaschen hat also den Faktor 800.
+       Das Pfand je Gebinde ist das Pfand auf das Gebinde selbst (z. B. den Kasten) und kommt
+       zusätzlich zum Pfand je <?= e($prod['base_unit']) ?> oben hinzu.</p>
     <div class="actions"><button class="btn btn-save">Gebinde hinzufügen</button></div>
   </form>
 

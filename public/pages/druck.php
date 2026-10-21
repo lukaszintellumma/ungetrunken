@@ -20,7 +20,7 @@ if ($u['role'] === 'theke') {
     }
 }
 
-$items = all('SELECT bi.*, p.artikelnr, p.name, p.base_unit, p.deposit, pk.name AS pack_name
+$items = all('SELECT bi.*, p.artikelnr, p.name, p.base_unit, p.deposit, pk.name AS pack_name, pk.deposit AS pack_deposit
                 FROM booking_items bi
                 JOIN products p ON p.id = bi.product_id
                 LEFT JOIN packagings pk ON pk.id = bi.packaging_id
@@ -31,7 +31,18 @@ $sumPfand = 0.0;
 foreach ($items as $i) {
     $sumWare  += (float)$i['qty_base'] * (float)$i['ek_price'];
     $sumPfand += (float)$i['qty_base'] * (float)$i['deposit'];
+    if ($i['packaging_id']) {
+        $sumPfand += (float)$i['qty_packs'] * (float)$i['pack_deposit'];
+    }
 }
+
+$costs = [
+    'Lieferpauschale' => (float)$b['cost_lieferpauschale'],
+    'Energie'         => (float)$b['cost_energie'],
+    (string)($b['cost_frei_label'] ?: 'Sonstiges') => (float)$b['cost_frei_amount'],
+];
+$sumCosts = 0.0;
+foreach ($costs as $amount) { $sumCosts += $amount; }
 
 // Belegart bestimmt die Beschriftung der Unterschriftsfelder
 $sigLeft  = 'Ausgegeben durch';
@@ -116,6 +127,14 @@ $auto = isset($_GET['auto']);
       <?php if ($sumPfand > 0): ?>
       <tr><td colspan="6" class="num" style="font-weight:400">davon Pfand</td>
           <td class="num" style="font-weight:400"><?= money($sumPfand) ?></td></tr>
+      <?php endif; ?>
+      <?php foreach ($costs as $label => $amount): if ($amount <= 0) continue; ?>
+      <tr><td colspan="6" class="num" style="font-weight:400"><?= e($label) ?></td>
+          <td class="num" style="font-weight:400"><?= money($amount) ?></td></tr>
+      <?php endforeach; ?>
+      <?php if ($sumCosts > 0): ?>
+      <tr><td colspan="6" class="num">Gesamtsumme</td>
+          <td class="num"><?= money($sumWare + $sumPfand + $sumCosts) ?></td></tr>
       <?php endif; ?>
     </tfoot>
   </table>

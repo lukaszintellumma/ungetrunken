@@ -62,6 +62,8 @@ CREATE TABLE products (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------- Gebinde (Palette / Kasten / Einzelflasche) -------
+-- deposit hier ist das Pfand auf das Gebinde selbst (z. B. Kastenpfand)
+-- und kommt zum Pfand je Basiseinheit aus products.deposit hinzu.
 CREATE TABLE packagings (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   product_id  INT NOT NULL,
@@ -69,6 +71,7 @@ CREATE TABLE packagings (
   factor      DECIMAL(12,3) NOT NULL DEFAULT 1,
   ean         VARCHAR(32) NULL,
   ek_price    DECIMAL(10,2) NULL,
+  deposit     DECIMAL(10,2) NOT NULL DEFAULT 0,
   is_default  TINYINT(1) NOT NULL DEFAULT 0,
   KEY ix_pack_prod (product_id),
   UNIQUE KEY uq_pack_ean (ean),
@@ -86,6 +89,10 @@ CREATE TABLE bookings (
   issued_by      VARCHAR(128) NULL,
   received_by    VARCHAR(128) NULL,
   beleg_text     VARCHAR(255) NULL,
+  cost_lieferpauschale DECIMAL(10,2) NOT NULL DEFAULT 0,
+  cost_energie         DECIMAL(10,2) NOT NULL DEFAULT 0,
+  cost_frei_label      VARCHAR(64) NULL,
+  cost_frei_amount     DECIMAL(10,2) NOT NULL DEFAULT 0,
   user_id        INT NOT NULL,
   status         ENUM('entwurf','gebucht','storniert') NOT NULL DEFAULT 'entwurf',
   storno_of_id   INT NULL,

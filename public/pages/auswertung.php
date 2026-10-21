@@ -48,6 +48,16 @@ $eingang = (float)scalar("
 $verbrauchWert = 0.0;
 foreach ($verbrauch as $v) { $verbrauchWert += (float)$v['menge'] * (float)$v['ek_price']; }
 
+// Externe Kosten im Zeitraum (Lieferpauschale, Energie, Freifeld) – nur fürs Lagerteam/Admin relevant
+$externeKosten = null;
+if ($lockedOutlet === null) {
+    $externeKosten = (float)scalar("
+      SELECT COALESCE(SUM(cost_lieferpauschale + cost_energie + cost_frei_amount),0)
+        FROM bookings
+       WHERE status = 'gebucht' AND booking_date BETWEEN ? AND ?",
+      [$from, $to]);
+}
+
 render_head('Auswertungen', $u, 'auswertung');
 ?>
 <h1>Auswertungen</h1>
@@ -65,6 +75,9 @@ render_head('Auswertungen', $u, 'auswertung');
   <div class="kpi"><div class="n"><?= money($eingang) ?></div><div class="l">Wareneingang im Zeitraum</div></div>
   <div class="kpi"><div class="n"><?= money($verbrauchWert) ?></div><div class="l">Abgänge zum EK</div></div>
   <div class="kpi"><div class="n"><?= count($verbrauch) ?></div><div class="l">Artikel mit Bewegung</div></div>
+  <?php if ($externeKosten !== null): ?>
+  <div class="kpi"><div class="n"><?= money($externeKosten) ?></div><div class="l">Externe Kosten im Zeitraum</div></div>
+  <?php endif; ?>
 </div>
 
 <h2>Bestand je Ausgabestelle</h2>
