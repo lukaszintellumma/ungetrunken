@@ -2,6 +2,10 @@
 --  Startdaten. Benutzer legst du beim ersten Aufruf selbst an.
 -- ============================================================
 
+-- Ohne das hier kodiert ein Client mit abweichendem Verbindungszeichensatz
+-- (z. B. der mysql-CLI-Standard latin1) die Umlaute unten doppelt.
+SET NAMES utf8mb4;
+
 INSERT INTO outlets (name, kind, is_central) VALUES
   ('Zentrallager',      'zentrallager', 1),
   ('Bar Lagerfeuer',    'bar',          0),
