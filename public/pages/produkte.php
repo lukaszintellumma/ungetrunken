@@ -2,6 +2,99 @@
 declare(strict_types=1);
 $u = require_role('admin', 'user');
 
+if (($_GET['csv_beispiel'] ?? '') === '1') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="artikel-beispiel.csv"');
+    echo "\xEF\xBB\xBF"; // BOM, damit Excel Umlaute korrekt anzeigt
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['artikelnr', 'name', 'warengruppe', 'basiseinheit', 'ek_preis', 'pfand', 'meldebestand', 'inventar'], ';');
+    fputcsv($out, ['4001', 'Apfelsaft 0,5 l',  'Alkoholfreie Getränke', 'Flasche', '0,45',  '0,15', '120', '0'], ';');
+    fputcsv($out, ['4002', 'Kakao 0,33 l',     'Heißgetränke',          'Flasche', '0,55',  '0,15', '60',  '0'], ';');
+    fputcsv($out, ['6001', 'Sonnenschirm',     'Grill & Küche',         'Stück',   '25,00', '0,00', '0',   '1'], ';');
+    fclose($out);
+    exit;
+}
+
+/**
+ * Artikel aus einer hochgeladenen CSV anlegen/aktualisieren.
+ * Trennzeichen ';', erste Zeile ist die Kopfzeile, Spaltenreihenfolge egal.
+ * Bekannte Artikelnummern werden aktualisiert, neue inkl. Basisgebinde angelegt.
+ */
+function import_products_csv(string $path): array {
+    $fh = fopen($path, 'r');
+    if (!$fh) return ['summary' => 'Die Datei konnte nicht gelesen werden.', 'errors' => []];
+
+    $bom = fread($fh, 3);
+    if ($bom !== "\xEF\xBB\xBF") rewind($fh);
+
+    $header = fgetcsv($fh, 0, ';');
+    if (!$header) { fclose($fh); return ['summary' => 'Die CSV-Datei ist leer.', 'errors' => []]; }
+    $col = array_flip(array_map(fn($h) => strtolower(trim((string)$h)), $header));
+
+    foreach (['artikelnr', 'name'] as $required) {
+        if (!isset($col[$required])) {
+            fclose($fh);
+            return ['summary' => "Spalte „$required“ ist Pflicht und fehlt in der Kopfzeile.", 'errors' => []];
+        }
+    }
+
+    $neu = 0; $aktualisiert = 0; $errors = [];
+    $line = 1;
+    while (($row = fgetcsv($fh, 0, ';')) !== false) {
+        $line++;
+        if (count($row) === 1 && trim((string)$row[0]) === '') continue; // leere Zeile
+
+        $get = fn(string $key, string $default = ''): string =>
+            isset($col[$key], $row[$col[$key]]) ? trim((string)$row[$col[$key]]) : $default;
+
+        $artikelnr = $get('artikelnr');
+        $name      = $get('name');
+        if ($artikelnr === '' || $name === '') {
+            $errors[] = "Zeile $line: Artikelnummer oder Bezeichnung fehlt, übersprungen.";
+            continue;
+        }
+
+        $catName = $get('warengruppe');
+        $catId   = null;
+        if ($catName !== '') {
+            $catId = (int)scalar('SELECT id FROM categories WHERE name = ?', [$catName]) ?: null;
+            if (!$catId) {
+                q('INSERT INTO categories (name, kind, sort) VALUES (?, "sonstiges", 100)', [$catName]);
+                $catId = (int)db()->lastInsertId();
+            }
+        }
+
+        $baseUnit = $get('basiseinheit', 'Stück') ?: 'Stück';
+        $ekPrice  = (float)str_replace(',', '.', $get('ek_preis', '0'));
+        $deposit  = (float)str_replace(',', '.', $get('pfand', '0'));
+        $minStock = (float)str_replace(',', '.', $get('meldebestand', '0'));
+        $isAsset  = in_array(strtolower($get('inventar', '0')), ['1', 'ja', 'true', 'x'], true) ? 1 : 0;
+
+        try {
+            $existing = one('SELECT id FROM products WHERE artikelnr = ?', [$artikelnr]);
+            if ($existing) {
+                q('UPDATE products SET name=?, category_id=?, base_unit=?, ek_price=?, deposit=?, min_stock=?, is_asset=?
+                   WHERE id=?', [$name, $catId, $baseUnit, $ekPrice, $deposit, $minStock, $isAsset, $existing['id']]);
+                $aktualisiert++;
+            } else {
+                q('INSERT INTO products (artikelnr, name, category_id, base_unit, ek_price, deposit, min_stock, is_asset)
+                   VALUES (?,?,?,?,?,?,?,?)', [$artikelnr, $name, $catId, $baseUnit, $ekPrice, $deposit, $minStock, $isAsset]);
+                $pid = (int)db()->lastInsertId();
+                q('INSERT INTO packagings (product_id, name, factor, is_default) VALUES (?,?,1,1)',
+                  [$pid, 'Einzeln (' . $baseUnit . ')']);
+                $neu++;
+            }
+        } catch (PDOException $ex) {
+            $errors[] = "Zeile $line ($artikelnr): konnte nicht gespeichert werden.";
+        }
+    }
+    fclose($fh);
+
+    $summary = "CSV-Import: $neu neu angelegt, $aktualisiert aktualisiert.";
+    if ($errors) $summary .= ' ' . count($errors) . ' Zeile(n) übersprungen.';
+    return ['summary' => $summary, 'errors' => $errors];
+}
+
 $edit = (int)($_GET['edit'] ?? 0);
 $prod = $edit ? one('SELECT * FROM products WHERE id = ?', [$edit]) : null;
 
@@ -56,6 +149,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('?p=produkte&edit=' . $pid);
     }
 
+    if ($act === 'csv_import') {
+        if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+            flash('Keine gültige CSV-Datei hochgeladen.', 'error');
+            redirect('?p=produkte');
+        }
+        $result = import_products_csv($_FILES['csv_file']['tmp_name']);
+        flash($result['summary'], $result['errors'] ? 'error' : 'ok');
+        foreach (array_slice($result['errors'], 0, 10) as $err) { flash($err, 'error'); }
+        redirect('?p=produkte');
+    }
+
     if ($act === 'del_pack') {
         $pid = (int)$_POST['product_id'];
         q('DELETE FROM packagings WHERE id = ? AND product_id = ?', [(int)$_POST['pack_id'], $pid]);
@@ -96,6 +200,28 @@ $cats = all('SELECT * FROM categories ORDER BY sort');
 render_head('Artikel', $u, 'produkte');
 ?>
 <h1>Artikel</h1>
+
+<div class="card">
+  <h2 style="margin-top:0">Artikel per CSV importieren</h2>
+  <form method="post" enctype="multipart/form-data">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="csv_import">
+    <div class="grid grid-3">
+      <label class="field"><span>CSV-Datei</span>
+        <input type="file" name="csv_file" accept=".csv,text/csv" required></label>
+      <div style="display:flex;align-items:flex-end">
+        <button class="btn btn-primary">Importieren</button>
+      </div>
+      <div style="display:flex;align-items:flex-end">
+        <a class="btn btn-ghost" href="?p=produkte&amp;csv_beispiel=1">Beispiel-CSV herunterladen</a>
+      </div>
+    </div>
+    <p class="hint">Kopfzeile erforderlich, Trennzeichen <code>;</code>: <code>artikelnr</code>, <code>name</code>,
+       <code>warengruppe</code> (optional, wird bei Bedarf angelegt), <code>basiseinheit</code> (optional, Standard „Stück“),
+       <code>ek_preis</code>, <code>pfand</code>, <code>meldebestand</code>, <code>inventar</code> (1/ja oder 0/nein).
+       Bekannte Artikelnummern werden aktualisiert, neue inklusive Basis-Gebinde angelegt.</p>
+  </form>
+</div>
 
 <div class="card">
   <h2 style="margin-top:0"><?= $prod ? 'Artikel bearbeiten' : 'Neuen Artikel anlegen' ?></h2>
