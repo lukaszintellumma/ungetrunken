@@ -18,6 +18,24 @@ Auf einem Proxmox-LXC mit Docker läuft das genauso wie auf einer VM. Für den B
 gehört ein Reverse Proxy mit TLS davor (Caddy oder Traefik) – die App setzt `httponly`- und
 `samesite`-Cookies, aber kein `secure`-Flag, weil sie nicht wissen kann, ob sie hinter HTTPS steht.
 
+### Produktivbetrieb auf einem eigenen VPS (z. B. Hetzner Cloud)
+
+`docker-compose.prod.yml` baut denselben Stack plus einen Caddy-Reverse-Proxy, der sich automatisch
+ein Let's-Encrypt-Zertifikat für deine Domain besorgt. Auf dem Server:
+
+```bash
+git clone https://github.com/lukaszintellumma/ungetrunken.git
+cd ungetrunken
+cp .env.prod.example .env      # DB_PASS, DB_ROOT_PASS, DOMAIN, ACME_EMAIL eintragen
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Voraussetzung: Ein A-Record der Domain zeigt schon auf die Server-IP, und Port 80/443 sind von
+außen erreichbar (bei Hetzner über die Cloud-Firewall freigeben). `web` hat in dieser Datei
+absichtlich keinen Port nach außen – nur Caddy ist öffentlich erreichbar.
+
+Updates danach: `git pull && docker compose -f docker-compose.prod.yml up -d --build`.
+
 ## Installation auf klassischem Webhosting (Febas, Hetzner, All-Inkl …)
 
 Docker ist nicht Pflicht. Die App ist reines PHP 8.1+ mit PDO/MySQL, ohne Composer, ohne Build-Schritt.
